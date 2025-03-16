@@ -25,28 +25,7 @@ class GNNLayer(nn.Module):
         output = node_features + weighted_aggregated
         return output
 
-class SequentialModeling(nn.Module):
-    def __init__(self):
-        super(SequentialModeling, self).__init__()
 
-    def forward(self, node_features, original_order):
-        """
-        Reorder node features based on the original sequence order.
-
-        Args:
-            node_features (torch.Tensor): Node features of shape (batch_size, num_nodes, feature_dim).
-            original_order (torch.Tensor): Original sequence order indices of shape (num_nodes,).
-
-        Returns:
-            torch.Tensor: Reordered node features of shape (batch_size, num_nodes, feature_dim).
-        """
-        # Ensure original_order is a tensor
-        if not isinstance(original_order, torch.Tensor):
-            original_order = torch.tensor(original_order, dtype=torch.long)
-
-        # Reorder node features based on the original sequence order
-        reordered_features = node_features[:, original_order]
-        return reordered_features
 
 class HighOrderPairwiseInteraction(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -55,8 +34,8 @@ class HighOrderPairwiseInteraction(nn.Module):
 
     def forward(self, ligand_features, receptor_features):
         # Generate pairwise interactions
-        n_ligand = ligand_features.size(1)
-        n_receptor = receptor_features.size(1)
+        n_ligand = ligand_features.size(0)
+        n_receptor = receptor_features.size(0)
         interactions = torch.zeros(n_ligand, n_receptor, self.linear.out_features)
 
         for i in range(n_ligand):
@@ -70,7 +49,6 @@ class ProteinInterfacePrediction(nn.Module):
     def __init__(self, gnn_input_dim, gnn_output_dim, hopi_output_dim, cnn_channels):
         super(ProteinInterfacePrediction, self).__init__()
         self.gnn = GNNLayer(gnn_input_dim, gnn_output_dim)
-        self.sequential_modeling = SequentialModeling()
         self.hopi = HighOrderPairwiseInteraction(gnn_output_dim, hopi_output_dim)
         self.cnn = nn.Sequential(
             nn.Conv2d(hopi_output_dim, cnn_channels, kernel_size=3, padding=1),
@@ -85,9 +63,6 @@ class ProteinInterfacePrediction(nn.Module):
         ligand_features = self.gnn(ligand_node_features, ligand_edge_features, ligand_adjacency)
         receptor_features = self.gnn(receptor_node_features, receptor_edge_features, receptor_adjacency)
 
-        # Sequential modeling to preserve original sequence order
-        ligand_features = self.sequential_modeling(ligand_features, ligand_order)
-        receptor_features = self.sequential_modeling(receptor_features, receptor_order)
 
         # High-order pairwise interactions
         interactions = self.hopi(ligand_features, receptor_features)
