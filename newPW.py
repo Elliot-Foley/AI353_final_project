@@ -55,7 +55,7 @@ class GraphDataset(Dataset):
             download_file(DATA_URLS[split], self.file_path)
 
         # Extract only the second element of the tuple (the list of dictionaries)
-        _, self.data_list = self.load_cpkl()  
+        _, self.data_list = self.load_cpkl()
 
     def load_cpkl(self):
         """Load compressed pickle file and return the tuple."""
@@ -74,32 +74,59 @@ class GraphDataset(Dataset):
 
     def __getitem__(self, idx):
         """
-        Convert each dictionary to a PyTorch Geometric Data object.
+        Convert each dictionary to a PyTorch Geometric Data object, but adjust the output format
+        to match the output of ProteinInterfaceDataset.
         """
         sample = self.data_list[idx]  # This is a dictionary with features
 
+        # Extract features
         r_vertex = torch.tensor(sample['r_vertex'], dtype=torch.float32)
         l_vertex = torch.tensor(sample['l_vertex'], dtype=torch.float32)
         r_edge = torch.tensor(sample['r_edge'], dtype=torch.float32)
         l_edge = torch.tensor(sample['l_edge'], dtype=torch.float32)
         r_hood_indices = torch.tensor(sample['r_hood_indices'], dtype=torch.long).squeeze(-1)
         l_hood_indices = torch.tensor(sample['l_hood_indices'], dtype=torch.long).squeeze(-1)
-        label = torch.tensor(sample['label'], dtype=torch.long)
+        label = torch.tensor(sample['label'], dtype=torch.float32)
 
-        data = Data(
-            r_vertex=r_vertex,
-            l_vertex=l_vertex,
-            r_edge=r_edge,
-            l_edge=l_edge,
-            r_hood_indices=r_hood_indices,
-            l_hood_indices=l_hood_indices,
-            label=label,
-        )
+        # Create adjacency matrices
+        l_adjacency = self.create_adjacency_matrix(l_hood_indices)
+        r_adjacency = self.create_adjacency_matrix(r_hood_indices)
 
-        return data
+        return l_vertex, l_edge, l_adjacency, r_vertex, r_edge, r_adjacency, label
+
+    def create_adjacency_matrix(self, hood_indices):
+        """Create an adjacency matrix from neighborhood indices."""
+        num_residues = hood_indices.size(0)
+        adjacency = torch.zeros(num_residues, num_residues)
+        for i in range(num_residues):
+            for j in range(hood_indices.size(1)):
+                neighbor_idx = hood_indices[i, j].item()
+                adjacency[i, neighbor_idx] = 1
+        return adjacency
+
+    def pad_adjacency_matrices(self, batch):
+        """Pad adjacency matrices to have the same size."""
+        max_size = max([data[2].size(0) for data in batch])  # Find the max number of nodes in the batch
+        for i in range(len(batch)):
+            l_adjacency, r_adjacency = batch[i][2], batch[i][5]  # Adjacency matrices
+            l_padding = max_size - l_adjacency.size(0)
+            r_padding = max_size - r_adjacency.size(0)
+
+            # Pad the adjacency matrices to the max size
+            batch[i] = (batch[i][0], batch[i][1], 
+                        torch.cat([l_adjacency, torch.zeros(l_padding, max_size)], dim=0),  # Padding for l_adjacency
+                        batch[i][3], batch[i][4],
+                        torch.cat([r_adjacency, torch.zeros(r_padding, max_size)], dim=0),  # Padding for r_adjacency
+                        batch[i][6])
+        return batch
+
 
 def collate_fn(batch):
+    """ Pad adjacency matrices to the same size and create a batch of graphs. """
+    dataset = GraphDataset(split="train")  # Or "test" based on your needs
+    batch = dataset.pad_adjacency_matrices(batch)  # Apply padding
     return Batch.from_data_list(batch)  # Properly combines graphs
+
 
 
 # Define dataset class for protein interface prediction
@@ -310,19 +337,23 @@ def main():
     # Example dataset
     train_dataset = GraphDataset("train")
     test_dataset = GraphDataset("test")
+    print(f"train_dataset: {train_dataset}")
 
     # Create DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    print(f"train_loader: {train_loader}")
 
     # Example usage
     for batch in train_loader:
-        print(len(batch[1]))
+        print(len(batch[1]))  # Example of accessing the batch size
         break
+
     for batch in train_loader:
-        data = batch
-        # Create dataset and dataloader
-        dataset = ProteinInterfaceDataset(data)
+        print(batch)
+        dataset = batch
+        # Now dataset already provides the same output as ProteinInterfaceDataset
+        # Continue with your training loop
         dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
         # Initialize model, optimizer, and loss function
