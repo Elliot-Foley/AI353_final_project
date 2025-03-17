@@ -9,6 +9,8 @@ import urllib.request
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader  # Use this instead of PyTorch's DataLoader
+from torch_geometric.data import Batch
 
 # URLs for downloading the dataset
 DATA_URLS = {
@@ -67,9 +69,9 @@ class GraphDataset(Dataset):
         return self.data_list[idx]
 
 
+
 def collate_fn(batch):
-    """Collate function for DataLoader to batch graph data."""
-    return batch  # PyTorch Geometric's DataLoader will handle batching
+    return Batch.from_data_list(batch)  # Properly combines graphs
 
 
 # Define dataset class for protein interface prediction
