@@ -54,21 +54,49 @@ class GraphDataset(Dataset):
         if not os.path.exists(self.file_path):
             download_file(DATA_URLS[split], self.file_path)
 
-        self.data_list = self.load_cpkl()
+        # Extract only the second element of the tuple (the list of dictionaries)
+        _, self.data_list = self.load_cpkl()  
 
     def load_cpkl(self):
-        """Load compressed pickle file and return the list of graphs."""
+        """Load compressed pickle file and return the tuple."""
         with gzip.open(self.file_path, 'rb') as f:
-            return pickle.load(f, encoding='latin1')
+            data = pickle.load(f, encoding='latin1')
+
+        print("Loaded data type:", type(data))  # Should be tuple
+        print("Tuple lengths:", len(data))  # Should be 2
+        print("First element type:", type(data[0]))  # Should be list of PDB codes
+        print("Second element type:", type(data[1]))  # Should be list of dicts with features
+
+        return data  # Still returns the full tuple
 
     def __len__(self):
         return len(self.data_list)
 
     def __getitem__(self, idx):
-        """Return a PyTorch Geometric Data object for the given index."""
-        return self.data_list[idx]
+        """
+        Convert each dictionary to a PyTorch Geometric Data object.
+        """
+        sample = self.data_list[idx]  # This is a dictionary with features
 
+        r_vertex = torch.tensor(sample['r_vertex'], dtype=torch.float32)
+        l_vertex = torch.tensor(sample['l_vertex'], dtype=torch.float32)
+        r_edge = torch.tensor(sample['r_edge'], dtype=torch.float32)
+        l_edge = torch.tensor(sample['l_edge'], dtype=torch.float32)
+        r_hood_indices = torch.tensor(sample['r_hood_indices'], dtype=torch.long).squeeze(-1)
+        l_hood_indices = torch.tensor(sample['l_hood_indices'], dtype=torch.long).squeeze(-1)
+        label = torch.tensor(sample['label'], dtype=torch.long)
 
+        data = Data(
+            r_vertex=r_vertex,
+            l_vertex=l_vertex,
+            r_edge=r_edge,
+            l_edge=l_edge,
+            r_hood_indices=r_hood_indices,
+            l_hood_indices=l_hood_indices,
+            label=label,
+        )
+
+        return data
 
 def collate_fn(batch):
     return Batch.from_data_list(batch)  # Properly combines graphs
@@ -84,6 +112,7 @@ class ProteinInterfaceDataset(Dataset):
 
     def __getitem__(self, idx):
         # Extract features
+        print(f"r_vertex: {self.data[1][idx]}")
         r_vertex = torch.tensor(self.data[1][idx]['r_vertex'], dtype=torch.float32)
         l_vertex = torch.tensor(self.data[1][idx]['l_vertex'], dtype=torch.float32)
         l_edge = torch.tensor(self.data[1][idx]['l_edge'], dtype=torch.float32)
