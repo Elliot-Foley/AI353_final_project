@@ -106,7 +106,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         train_loss = 0.0
         train_loop = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs} [Train]")
 
-        for images, masks in train_loop:
+        for batch_idx, (images, masks) in enumerate(train_loop):
             images, masks = images.to(device), masks.to(device)
 
             # Forward pass
@@ -120,6 +120,9 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
 
             train_loss += loss.item()
             train_loop.set_postfix(loss=loss.item())
+
+            # Log training loss
+            writer.add_scalar('Loss/train', loss.item(), epoch * len(train_loader) + batch_idx)
 
         avg_train_loss = train_loss / len(train_loader)
 
@@ -150,6 +153,20 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         avg_val_loss = val_loss / len(val_loader)
         avg_iou = sum(iou_scores) / len(iou_scores)
 
+
+        # Log validation loss & IoU
+        writer.add_scalar('Loss/val', avg_val_loss, epoch)
+        writer.add_scalar('IoU/val', avg_iou, epoch)
+
+        if epoch % 5 == 0:
+            # Add a batch dimension if it's not already there
+            print(preds.size())
+            print(masks.size())
+            writer.add_images('Predictions', preds.unsqueeze(0), epoch)
+            writer.add_images('Ground Truth', masks, epoch)
+
+
+
         print(f"Epoch {epoch+1}: Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, IoU: {avg_iou:.4f}")
 
         # Save best model
@@ -174,5 +191,5 @@ criterion = nn.BCEWithLogitsLoss() if num_classes == 1 else nn.CrossEntropyLoss(
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Train model
-num_epochs = 10
+num_epochs = 30
 trained_model = train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs)
